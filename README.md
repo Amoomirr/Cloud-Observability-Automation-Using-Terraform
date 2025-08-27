@@ -44,11 +44,11 @@ An **EC2 instance** is provisioned with `user_data` automation that installs:
 
 ## 📊 CloudWatch Dashboard & Alerts
 - **Dashboard** tracks EC2 CPU utilization with both graph & single-value widgets.
-- <img width="1917" height="952" alt="CLOUDWATCH-DashBoard" src="https://github.com/user-attachments/assets/40b778f6-f713-43d5-8079-13e94e38504d" />
+  <img width="1917" height="952" alt="CLOUDWATCH-DashBoard" src="https://github.com/user-attachments/assets/40b778f6-f713-43d5-8079-13e94e38504d" />
 - **Alarm** triggers when CPU usage ≥ **80%**.
--  <img width="1907" height="967" alt="ALERT-DASHBOARD" src="https://github.com/user-attachments/assets/d8b0fbdd-f12c-48df-bcbd-d0768403a3db" />
+  <img width="1907" height="967" alt="ALERT-DASHBOARD" src="https://github.com/user-attachments/assets/d8b0fbdd-f12c-48df-bcbd-d0768403a3db" />
 - **SNS Integration** delivers proactive email notifications.
-- <img width="1500" height="455" alt="SNS" src="https://github.com/user-attachments/assets/31c4ceaa-0851-4660-9815-c41213ecb3f6" />
+ <img width="1500" height="455" alt="SNS" src="https://github.com/user-attachments/assets/31c4ceaa-0851-4660-9815-c41213ecb3f6" />
 
 
 ---
