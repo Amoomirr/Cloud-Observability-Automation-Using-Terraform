@@ -1,0 +1,9 @@
+output "aws_instance_ids" {
+  description = "The IDs of the AWS EC2 instances"
+  value       = aws_instance.Aws_Vm[*].id
+}
+
+output "aws_instance_public_ips" {
+  description = "The public IPs of the AWS EC2 instances"
+  value  = aws_instance.Aws_Vm[*].public_ip
+}

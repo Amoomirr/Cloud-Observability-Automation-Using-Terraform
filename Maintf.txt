@@ -1,0 +1,294 @@
+# ------------------ SNS Topic ------------------
+resource "aws_sns_topic" "cloudwatch_alarms_topic" {
+  name = "CloudWatch_Alarms_Topic"
+}
+
+# ------------------ SNS Subscription ------------------
+resource "aws_sns_topic_subscription" "email_subscription" {
+  topic_arn = aws_sns_topic.cloudwatch_alarms_topic.arn
+  protocol  = "email"
+  endpoint  = "cloudengineer1282@gmail.com" # Replace with your email
+}
+
+# ------------------ CloudWatch Alarm ------------------
+resource "aws_cloudwatch_metric_alarm" "cpu_high_alarm" {
+  alarm_name          = "High-CPU-Alarm"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = 80
+  alarm_description   = "Alarm triggers if CPU utilization is >= 80% (Maximum)."
+  alarm_actions       = [aws_sns_topic.cloudwatch_alarms_topic.arn]
+
+  dimensions = {
+    InstanceId = aws_instance.Aws_Vm.id
+  }
+}
+
+
+# ------------------ CloudWatch Dashboard ------------------
+resource "aws_cloudwatch_dashboard" "enhanced_dashboard" {
+  dashboard_name = "EC2-Demo-Monitoring"
+
+  # The dashboard_body uses JSON to define widgets
+  dashboard_body = jsonencode({
+    widgets = [
+
+      # Dashboard Title Widget
+      {
+        type       = "text"
+        x          = 0
+        y          = 0
+        width      = 24
+        height     = 2
+        properties = {
+          markdown = "# EC2 Mumbai"
+        }
+      },
+
+      # CPU Utilization Chart
+      {
+        type       = "metric"
+        x          = 0
+        y          = 2
+        width      = 12
+        height     = 6
+        properties = {
+          metrics = [
+            ["AWS/EC2", "CPUUtilization", "InstanceId", aws_instance.Aws_Vm.id]
+          ]
+          period = 60
+          stat   = "Average"
+          title  = "CPU Utilization"
+          region = "ap-south-1"
+        }
+      },
+
+      # Single Value CPU Widget
+      {
+        type       = "metric"
+        x          = 12
+        y          = 8
+        width      = 12
+        height     = 6
+        properties = {
+          metrics = [
+            ["AWS/EC2", "CPUUtilization", "InstanceId", aws_instance.Aws_Vm.id]
+          ]
+          view   = "singleValue"
+          stat   = "Average"
+          period = 60
+          title  = "Current CPU %"
+          region = "ap-south-1"
+        }
+      },
+    ]
+  }
+  )
+}
+
+# ------------------ VPC Setup ------------------
+resource "aws_vpc" "My_Vpc" {
+  cidr_block = "10.0.0.0/16" # Defines VPC CIDR range
+  tags = {
+    Name = "Monitoring_VPC"
+  }
+}
+
+# Public Subnet inside VPC
+resource "aws_subnet" "Public_Subnet" {
+  vpc_id                  = aws_vpc.My_Vpc.id # Links subnet to VPC
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = var.aws_az
+  map_public_ip_on_launch = true # Enables auto public IP assignment
+  tags = {
+    Name = "Monitoring-Public-subnet"
+  }
+}
+
+# Internet Gateway for Internet Access
+resource "aws_internet_gateway" "My_IGW" {
+  vpc_id = aws_vpc.My_Vpc.id
+  tags = {
+    Name = "Monitoring-IGW"
+  }
+}
+
+# Route Table for Internet Access
+resource "aws_route_table" "Public_RT" {
+  vpc_id = aws_vpc.My_Vpc.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.My_IGW.id
+  }
+  tags = {
+    Name = "Monitoring-Public-RT"
+  }
+}
+
+# Associate Route Table to Public Subnet
+resource "aws_route_table_association" "PublicRT_Association" {
+  subnet_id      = aws_subnet.Public_Subnet.id
+  route_table_id = aws_route_table.Public_RT.id
+}
+
+# ------------------ Security Group ------------------
+resource "aws_security_group" "Monitoring_Sg" {
+  name        = "Monitoring"
+  description = "Allow ICMP, SSH, HTTP, custom ports"
+  vpc_id      = aws_vpc.My_Vpc.id
+
+  ingress {
+    from_port   = -1
+    to_port     = -1
+    protocol    = "icmp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.My_Ip] # Restricts SSH to your IP
+  }
+
+  ingress {
+    from_port   = 9090
+    to_port     = 9090
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "Monitoring_SG"
+  }
+}
+
+# ------------------ EC2 Instance with CloudWatch Agent ------------------
+resource "aws_instance" "Aws_Vm" {
+  ami                    = "ami-0861f4e788f5069dd" # Amazon Linux 2 AMI
+  instance_type          = "t2.micro"             # Free tier instance
+  key_name               = var.Key_Name
+  subnet_id              = aws_subnet.Public_Subnet.id
+  vpc_security_group_ids = [aws_security_group.Monitoring_Sg.id]
+  availability_zone      = var.aws_az
+
+  tags = {
+    Name = "Ec2-Monitoring"
+  }
+
+user_data = <<-EOF
+#!/bin/bash
+set -e  # Exit on any error
+
+# -------------------- Update System --------------------
+sudo yum update -y
+sudo yum upgrade -y
+
+# -------------------- Install Prometheus --------------------
+cd /opt
+
+# Download and extract Prometheus
+wget https://github.com/prometheus/prometheus/releases/download/v2.1.0/prometheus-2.1.0.linux-amd64.tar.gz
+tar -xf prometheus-2.1.0.linux-amd64.tar.gz
+
+# Move Prometheus binaries to /usr/local/bin
+sudo mv prometheus-2.1.0.linux-amd64/prometheus /usr/local/bin/
+sudo mv prometheus-2.1.0.linux-amd64/promtool /usr/local/bin/
+
+# Create Prometheus directories
+sudo mkdir -p /etc/prometheus /var/lib/prometheus
+
+# Move consoles and libraries
+sudo mv prometheus-2.1.0.linux-amd64/consoles /etc/prometheus/
+sudo mv prometheus-2.1.0.linux-amd64/console_libraries /etc/prometheus/
+
+# Cleanup
+rm -rf prometheus-2.1.0.linux-amd64*
+# Create Prometheus configuration
+cat <<EOT | sudo tee /etc/prometheus/prometheus.yml
+global:
+  scrape_interval: 10s
+scrape_configs:
+  - job_name: 'prometheus_metrics'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['localhost:9090']
+  - job_name: 'node_exporter_metrics'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['localhost:9100']
+EOT
+
+# -------------------- Install Node Exporter --------------------
+cd /opt
+sudo curl -LO https://github.com/prometheus/node_exporter/releases/download/v1.7.0/node_exporter-1.7.0.linux-amd64.tar.gz
+sudo tar -xvzf node_exporter-1.7.0.linux-amd64.tar.gz
+sudo mv node_exporter-1.7.0.linux-amd64/node_exporter /usr/local/bin/
+
+# Create a dedicated user for Node Exporter
+sudo useradd --no-create-home --shell /bin/false node_exporter
+
+# Create systemd service for Node Exporter
+sudo tee /etc/systemd/system/node_exporter.service > /dev/null <<EOC
+[Unit]
+Description=Node Exporter
+After=network.target
+
+[Service]
+User=node_exporter
+ExecStart=/usr/local/bin/node_exporter
+
+[Install]
+WantedBy=multi-user.target
+EOC
+
+# Enable and start Node Exporter
+sudo systemctl daemon-reload
+sudo systemctl enable node_exporter
+sudo systemctl start node_exporter
+
+# -------------------- Install Grafana --------------------
+sudo tee /etc/yum.repos.d/grafana.repo > /dev/null <<EOC
+[grafana]
+name=grafana
+baseurl=https://packages.grafana.com/oss/rpm
+repo_gpgcheck=1
+enabled=1
+gpgcheck=1
+gpgkey=https://packages.grafana.com/gpg.key
+EOC
+
+sudo yum install grafana -y
+
+# Enable and start Grafana
+sudo systemctl enable grafana-server
+sudo systemctl start grafana-server
+
+EOF
+
+}

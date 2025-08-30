@@ -1,0 +1,18 @@
+variable "aws_region" {
+  default = "ap-south-1"
+}
+variable "aws_az" {
+  default = "ap-south-1a"
+}
+
+variable "Key_Name" {
+  description = "Name of the existing EC2 key pair"
+  default     = "Monitoring-Server-Keypair"
+}
+
+variable "My_Ip" {
+  description = "The IP range allowed for SSH access"
+  type        = string
+  default = "10.0.0.0/16"
+}
+
